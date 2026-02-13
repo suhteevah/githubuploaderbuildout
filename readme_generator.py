@@ -13,9 +13,9 @@ DONATION_SECTION = """
 
 If you find this project useful, consider buying me a coffee! Your support helps me keep building and sharing open-source tools.
 
-[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://www.paypal.com/paypal.me/gankstapony)
+[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://www.paypal.com/paypal.me/baal_hosting)
 
-**PayPal:** [gankstapony@hotmail.com](https://paypal.me/gankstapony)
+**PayPal:** [baal_hosting@live.com](https://paypal.me/baal_hosting)
 
 Every donation, no matter how small, is greatly appreciated and motivates continued development. Thank you!
 """
@@ -25,7 +25,7 @@ def generate_readme(
     project_name: str,
     project_type: str = "",
     description: str = "",
-    paypal_email: str = "gankstapony@hotmail.com",
+    paypal_email: str = "baal_hosting@live.com",
 ) -> str:
     """
     Generate a complete README.md for a project.
@@ -160,7 +160,7 @@ If you find this project useful, consider buying me a coffee! Your support helps
 Every donation, no matter how small, is greatly appreciated and motivates continued development. Thank you!"""
 
 
-def update_existing_readme(readme_path: str, paypal_email: str = "gankstapony@hotmail.com") -> str:
+def update_existing_readme(readme_path: str, paypal_email: str = "baal_hosting@live.com") -> str:
     """
     Update an existing README.md to include the donation section.
 
@@ -197,7 +197,7 @@ def ensure_readme(
     project_name: str,
     project_type: str = "",
     description: str = "",
-    paypal_email: str = "gankstapony@hotmail.com",
+    paypal_email: str = "baal_hosting@live.com",
 ) -> None:
     """
     Ensure a project has a README.md with donation section.

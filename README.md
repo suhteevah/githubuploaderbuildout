@@ -66,7 +66,7 @@ run_upload.bat
 | `--claude-only`, `-c` | Only upload Claude Code projects |
 | `--yes`, `-y` | Skip confirmation prompts |
 | `--dry-run`, `-d` | Preview without making changes |
-| `--paypal` | PayPal email for donations (default: gankstapony@hotmail.com) |
+| `--paypal` | PayPal email for donations (default: baal_hosting@live.com) |
 | `--max-depth` | How deep to scan directories (default: 3) |
 | `--private` | Create private repos |
 | `--token`, `-t` | GitHub token (alternative to GH_TOKEN env var) |
@@ -103,8 +103,8 @@ githubuploaderbuildout/
 
 If you find this project useful, consider buying me a coffee! Your support helps me keep building and sharing open-source tools.
 
-[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://www.paypal.me/gankstapony)
+[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://www.paypal.me/baal_hosting)
 
-**PayPal:** [gankstapony@hotmail.com](https://paypal.me/gankstapony)
+**PayPal:** [baal_hosting@live.com](https://paypal.me/baal_hosting)
 
 Every donation, no matter how small, is greatly appreciated and motivates continued development. Thank you!

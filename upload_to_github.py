@@ -144,8 +144,8 @@ def main():
     )
     parser.add_argument(
         "--paypal",
-        default="gankstapony@hotmail.com",
-        help="PayPal email for donation links (default: gankstapony@hotmail.com)",
+        default="baal_hosting@live.com",
+        help="PayPal email for donation links (default: baal_hosting@live.com)",
     )
     parser.add_argument(
         "--max-depth",

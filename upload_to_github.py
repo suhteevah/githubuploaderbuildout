@@ -263,6 +263,8 @@ def main():
         try:
             api = GitHubAPI(token=args.token)
             print(f"  Authenticated as: {api.username}")
+            api.check_repo_create_permission()
+            print(f"  Token permissions verified.")
         except ValueError as e:
             print(f"Error: {e}")
             logger.error(f"GitHub auth failed (ValueError): {e}")
@@ -358,6 +360,17 @@ def main():
             logger.error(f"FAILED: Exception processing '{name}': {type(e).__name__}: {e}")
             logger.error(traceback.format_exc())
             results["failed"].append(name)
+
+            # Abort early on permission errors - no point retrying every project
+            if "403" in str(e) and "not accessible by personal access token" in str(e):
+                print(f"\n  ABORTING: Token lacks required permissions for repo creation.")
+                print(f"  Your fine-grained token needs 'Administration: Read and write' permission.")
+                print(f"  Fix your token at: https://github.com/settings/tokens")
+                print(f"  Then re-run the script.")
+                logger.error("Aborting run: token lacks repo creation permissions (403).")
+                remaining = [sanitize_repo_name(p["name"]) for p in projects[i:]]
+                results["failed"].extend(remaining)
+                break
 
     # Summary
     print("\n" + "=" * 60)

@@ -291,7 +291,19 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") 
             logger.info(f"Switching from '{current_branch}' to '{branch}'")
             run_git("checkout", "-b", branch)
 
-    # Create .gitignore if missing
+    # Windows reserved device names that crash git add
+    WINDOWS_RESERVED = [
+        "nul", "con", "prn", "aux",
+        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ]
+    RESERVED_GITIGNORE_BLOCK = (
+        "\n# Windows reserved device names (cause git add failures)\n"
+        + "\n".join(WINDOWS_RESERVED)
+        + "\n"
+    )
+
+    # Create .gitignore if missing, or ensure reserved names are present
     gitignore = project / ".gitignore"
     if not gitignore.exists():
         logger.info("Creating default .gitignore")
@@ -300,12 +312,34 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") 
             "# Build\ndist/\nbuild/\n*.egg-info/\n__pycache__/\n\n"
             "# IDE\n.idea/\n.vscode/\n*.swp\n*.swo\n\n"
             "# OS\n.DS_Store\nThumbs.db\n\n"
-            "# Environment\n.env\n.env.local\n*.key\n*.pem\n",
+            "# Environment\n.env\n.env.local\n*.key\n*.pem\n"
+            + RESERVED_GITIGNORE_BLOCK,
             encoding="utf-8",
         )
+    else:
+        # Ensure existing .gitignore has reserved names
+        existing = gitignore.read_text(encoding="utf-8", errors="replace")
+        if "nul" not in existing.split("\n"):
+            logger.info("Appending Windows reserved names to existing .gitignore")
+            with open(gitignore, "a", encoding="utf-8") as f:
+                f.write(RESERVED_GITIGNORE_BLOCK)
 
-    # Add all files
-    run_git("add", "-A")
+    # Add all files (with recovery for problematic files)
+    add_result = run_git("add", "-A")
+    if add_result.returncode != 0:
+        logger.warning("git add -A failed, attempting recovery...")
+        # Reset index and try again - the .gitignore should now exclude reserved names
+        run_git("reset")
+        add_result = run_git("add", "-A")
+        if add_result.returncode != 0:
+            # Last resort: add files individually, skipping failures
+            logger.warning("git add -A still failing, adding files individually...")
+            status_check = run_git("status", "--porcelain")
+            for line in status_check.stdout.strip().splitlines():
+                # Extract filename from porcelain output (format: "XY filename")
+                fname = line[3:].strip().strip('"')
+                if fname and fname.lower() not in WINDOWS_RESERVED:
+                    run_git("add", "--", fname)
 
     # Check if there's anything to commit
     status = run_git("status", "--porcelain")
@@ -328,7 +362,7 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") 
         else:
             logger.info(f"Remote already set to '{remote_url}'")
 
-    # Push with retry
+    # Push with retry (only retry on network errors, not refspec/commit errors)
     for attempt in range(4):
         logger.info(f"Push attempt {attempt + 1}/4...")
         result = run_git("push", "-u", "origin", branch)
@@ -336,6 +370,11 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") 
             logger.info(f"Push successful to {remote_url}")
             print(f"    Pushed successfully to {remote_url}")
             return True
+        # Don't retry errors that won't resolve with retries
+        stderr_lower = result.stderr.lower()
+        if "src refspec" in stderr_lower or "does not match any" in stderr_lower:
+            logger.error(f"No commits on branch '{branch}' - nothing to push")
+            break
         if attempt < 3:
             import time
             wait = 2 ** (attempt + 1)

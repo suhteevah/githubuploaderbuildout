@@ -43,6 +43,8 @@ class GitHubAPI:
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "github-uploader-buildout",
         }
+        if data is not None:
+            headers["Content-Type"] = "application/json"
         body = json.dumps(data).encode("utf-8") if data else None
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
@@ -99,7 +101,7 @@ class GitHubAPI:
         }
         if homepage:
             data["homepage"] = homepage
-        return self._request("POST", "/repos", data)
+        return self._request("POST", "/user/repos", data)
 
     def update_repo(self, name: str, description: str = None, homepage: str = None) -> dict:
         """Update an existing repository's metadata."""

@@ -52,6 +52,7 @@ SKIP_DIRS = {
     ".cache",
     ".npm",
     ".yarn",
+    ".pnpm-store",
     "$RECYCLE.BIN",
     "System Volume Information",
     "Recovery",

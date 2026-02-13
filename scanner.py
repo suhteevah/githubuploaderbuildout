@@ -11,9 +11,11 @@ Identifies projects by looking for common indicators:
 - Any folder with source code files that looks like a project
 """
 
+import logging
 import os
 from pathlib import Path
 
+logger = logging.getLogger("uploader.scanner")
 
 # Files/dirs that indicate a project root
 PROJECT_MARKERS = [
@@ -70,6 +72,7 @@ def is_claude_project(project_path: Path) -> bool:
     """Check if a project has Claude Code specific files."""
     for indicator in CLAUDE_INDICATORS:
         if (project_path / indicator).exists():
+            logger.debug(f"  Claude indicator found: {indicator}")
             return True
     return False
 
@@ -113,8 +116,8 @@ def get_project_description(project_path: Path) -> str:
                 data = json.load(f)
                 if data.get("description"):
                     return data["description"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"  Could not read package.json: {e}")
 
     # Check pyproject.toml for description
     pyproject = project_path / "pyproject.toml"
@@ -127,8 +130,8 @@ def get_project_description(project_path: Path) -> str:
                         desc = line.split("=", 1)[1].strip().strip('"').strip("'")
                         if desc:
                             return desc
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"  Could not read pyproject.toml: {e}")
 
     # Check existing README
     for readme_name in ["README.md", "README.txt", "README", "readme.md"]:
@@ -142,8 +145,8 @@ def get_project_description(project_path: Path) -> str:
                         stripped = line.strip()
                         if stripped and not stripped.startswith("#"):
                             return stripped[:200]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"  Could not read {readme_name}: {e}")
 
     return ""
 
@@ -158,36 +161,50 @@ def scan_directory(root_path: str, max_depth: int = 3, claude_only: bool = False
         claude_only: If True, only return projects with Claude Code indicators
 
     Returns:
-        List of dicts with project info:
-        {
-            "name": str,
-            "path": str,
-            "type": str,
-            "description": str,
-            "is_claude": bool,
-            "has_git": bool,
-            "markers_found": list[str],
-        }
+        List of dicts with project info
     """
     root = Path(root_path)
+    logger.info(f"scan_directory: root='{root_path}', max_depth={max_depth}, claude_only={claude_only}")
+
     if not root.exists():
+        logger.error(f"Path '{root_path}' does not exist!")
         print(f"Error: Path '{root_path}' does not exist.")
         return []
 
+    if not root.is_dir():
+        logger.error(f"Path '{root_path}' is not a directory!")
+        print(f"Error: Path '{root_path}' is not a directory.")
+        return []
+
+    logger.info(f"Path verified: '{root_path}' exists and is a directory")
+
     projects = []
     seen_paths = set()
+    dirs_scanned = 0
+    dirs_skipped = 0
+    permission_errors = 0
 
     def _scan(directory: Path, depth: int):
+        nonlocal dirs_scanned, dirs_skipped, permission_errors
+
         if depth > max_depth:
+            logger.debug(f"  Max depth reached at: {directory}")
             return
         if directory.name in SKIP_DIRS:
+            dirs_skipped += 1
+            logger.debug(f"  Skipping (in SKIP_DIRS): {directory}")
             return
+
+        dirs_scanned += 1
 
         try:
             entries = list(directory.iterdir())
         except PermissionError:
+            permission_errors += 1
+            logger.warning(f"  Permission denied: {directory}")
             return
-        except OSError:
+        except OSError as e:
+            logger.warning(f"  OS error scanning {directory}: {e}")
             return
 
         entry_names = {e.name for e in entries}
@@ -199,8 +216,10 @@ def scan_directory(root_path: str, max_depth: int = 3, claude_only: bool = False
                 seen_paths.add(real_path)
                 is_claude = is_claude_project(directory)
 
+                logger.debug(f"  Project candidate: {directory.name} | markers={markers_found} | claude={is_claude}")
+
                 if claude_only and not is_claude:
-                    pass  # Skip non-Claude projects when filtering
+                    logger.debug(f"  Skipping (not Claude, claude_only=True): {directory.name}")
                 else:
                     project_info = {
                         "name": directory.name,
@@ -212,6 +231,8 @@ def scan_directory(root_path: str, max_depth: int = 3, claude_only: bool = False
                         "markers_found": markers_found,
                     }
                     projects.append(project_info)
+                    logger.info(f"  FOUND: {directory.name} ({project_info['type']})"
+                                f"{' [Claude]' if is_claude else ''} at {directory}")
                     print(f"  Found: {directory.name} ({project_info['type']})"
                           f"{' [Claude Code]' if is_claude else ''}")
             return  # Don't recurse into project subdirectories
@@ -223,12 +244,22 @@ def scan_directory(root_path: str, max_depth: int = 3, claude_only: bool = False
 
     print(f"Scanning '{root_path}' for projects (max depth: {max_depth})...")
     _scan(root, 0)
+
+    logger.info(f"Scan complete: {len(projects)} projects found, "
+                f"{dirs_scanned} dirs scanned, {dirs_skipped} skipped, "
+                f"{permission_errors} permission errors")
     print(f"\nFound {len(projects)} project(s).")
+
+    if permission_errors > 0:
+        print(f"  ({permission_errors} directories skipped due to permissions)")
+        logger.warning(f"{permission_errors} directories could not be read (permission denied)")
+
     return projects
 
 
 if __name__ == "__main__":
     import sys
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     path = sys.argv[1] if len(sys.argv) > 1 else "J:\\"
     claude_only = "--claude-only" in sys.argv
     projects = scan_directory(path, claude_only=claude_only)

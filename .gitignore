@@ -4,3 +4,4 @@ __pycache__/
 .env
 *.key
 *.pem
+upload_log.txt

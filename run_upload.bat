@@ -60,5 +60,11 @@ echo.
 python "%~dp0upload_to_github.py" --yes
 
 echo.
-echo Done! Press any key to close.
+echo ============================================================
+echo   Done! A detailed log has been saved to:
+echo   %~dp0upload_log.txt
+echo.
+echo   If anything failed, open upload_log.txt for full details.
+echo ============================================================
+echo.
 pause

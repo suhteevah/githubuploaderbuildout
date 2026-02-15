@@ -172,6 +172,11 @@ def main():
         action="store_true",
         help="Show verbose debug output on console (log file is always verbose)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force push (overwrites remote history). Use to fix desync'd repos.",
+    )
 
     args = parser.parse_args()
 
@@ -344,7 +349,7 @@ def main():
             # Push to GitHub
             remote_url = f"https://github.com/{api.username}/{name}.git"
             logger.info(f"Pushing to: {remote_url}")
-            success = git_init_and_push(project["path"], remote_url, args.branch)
+            success = git_init_and_push(project["path"], remote_url, args.branch, force=args.force)
 
             if success:
                 results["success"].append(name)

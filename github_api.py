@@ -243,7 +243,7 @@ class GitHubAPI:
         return repos
 
 
-def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") -> bool:
+def git_init_and_push(project_path: str, remote_url: str, branch: str = "main", force: bool = False) -> bool:
     """
     Initialize a git repo (if needed) and push to GitHub.
 
@@ -251,6 +251,7 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") 
         project_path: Local path to the project
         remote_url: GitHub repo URL (https)
         branch: Branch name to push to
+        force: If True, use --force on push (overwrites remote)
 
     Returns:
         True if successful
@@ -363,9 +364,13 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main") 
             logger.info(f"Remote already set to '{remote_url}'")
 
     # Push with retry (only retry on network errors, not refspec/commit errors)
+    push_args = ["push", "-u", "origin", branch]
+    if force:
+        push_args = ["push", "--force", "-u", "origin", branch]
+        logger.info("Force push enabled")
     for attempt in range(4):
         logger.info(f"Push attempt {attempt + 1}/4...")
-        result = run_git("push", "-u", "origin", branch)
+        result = run_git(*push_args)
         if result.returncode == 0:
             logger.info(f"Push successful to {remote_url}")
             print(f"    Pushed successfully to {remote_url}")

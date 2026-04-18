@@ -6,8 +6,10 @@ Automatically scan a drive or directory for code projects, create individual Git
 
 - **Auto-detection**: Scans for projects by recognizing `package.json`, `requirements.txt`, `Cargo.toml`, `go.mod`, and many more
 - **Claude Code awareness**: Identifies Claude Code projects by `.claude/`, `CLAUDE.md`, etc.
-- **Smart README generation**: Creates or updates README.md files with project info and a PayPal donation section
+- **Smart README generation**: Creates or updates README.md files with project info (donation section opt-OUT via `--no-donation-readme`)
 - **GitHub API integration**: Automatically creates repos and pushes code
+- **🛡️ Secret scan gate**: Every push is scanned for live credential patterns (Stripe `sk_live_*`, Telegram bot tokens, RunPod `rpa_*`, GitHub `ghp_*`, AWS `AKIA*`, Google `AIza*`, private-key blocks, etc.). Push aborts on any hit. Escape hatch: `--force-secrets` (for known false positives only).
+- **Hardened default `.gitignore`**: Injects `.env*`, `.secrets`, `*.key`, `*.pem`, `scratch/`, `VOXCLAW.md`, `SECRETS.md`, `*.local`, etc. into every new/existing repo before the first commit.
 - **Safe defaults**: Dry-run mode, interactive confirmation, skip-existing behavior
 
 ## Quick Start

@@ -177,6 +177,17 @@ def main():
         action="store_true",
         help="Force push (overwrites remote history). Use to fix desync'd repos.",
     )
+    parser.add_argument(
+        "--force-secrets",
+        action="store_true",
+        help=("Push even if the secret scanner detects live credentials. "
+              "ONLY use for known false positives — default is abort on any hit."),
+    )
+    parser.add_argument(
+        "--no-donation-readme",
+        action="store_true",
+        help="Do not inject the PayPal donation section into generated READMEs.",
+    )
 
     args = parser.parse_args()
 
@@ -335,21 +346,32 @@ def main():
                 print(f"  Created repo: {repo_data.get('html_url', name)}")
                 logger.info(f"Repo created successfully: {repo_data.get('html_url', name)}")
 
-            # Update/create README with donation section
-            logger.info(f"Ensuring README.md with donation section...")
-            ensure_readme(
-                project_path=project["path"],
-                project_name=name,
-                project_type=project["type"],
-                description=project["description"],
-                paypal_email=args.paypal,
-            )
-            logger.info("README.md updated/created.")
+            # Update/create README. Donation section is opt-OUT via --no-donation-readme.
+            if args.no_donation_readme:
+                logger.info("Skipping donation-section injection (--no-donation-readme)")
+            else:
+                logger.info(f"Ensuring README.md with donation section...")
+                ensure_readme(
+                    project_path=project["path"],
+                    project_name=name,
+                    project_type=project["type"],
+                    description=project["description"],
+                    paypal_email=args.paypal,
+                )
+                logger.info("README.md updated/created.")
 
-            # Push to GitHub
+            # Push to GitHub. Secret scanner runs inside git_init_and_push and
+            # will abort the push on any credential-pattern match unless
+            # --force-secrets is set.
             remote_url = f"https://github.com/{api.username}/{name}.git"
             logger.info(f"Pushing to: {remote_url}")
-            success = git_init_and_push(project["path"], remote_url, args.branch, force=args.force)
+            success = git_init_and_push(
+                project["path"],
+                remote_url,
+                args.branch,
+                force=args.force,
+                force_secrets=args.force_secrets,
+            )
 
             if success:
                 results["success"].append(name)

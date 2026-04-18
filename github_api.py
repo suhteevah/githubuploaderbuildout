@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import traceback
 import urllib.request
 import urllib.error
@@ -243,18 +244,26 @@ class GitHubAPI:
         return repos
 
 
-def git_init_and_push(project_path: str, remote_url: str, branch: str = "main", force: bool = False) -> bool:
-    """
-    Initialize a git repo (if needed) and push to GitHub.
+def git_init_and_push(
+    project_path: str,
+    remote_url: str,
+    branch: str = "main",
+    force: bool = False,
+    force_secrets: bool = False,
+) -> bool:
+    """Init repo, commit, scan for secrets, push.
 
     Args:
-        project_path: Local path to the project
-        remote_url: GitHub repo URL (https)
-        branch: Branch name to push to
-        force: If True, use --force on push (overwrites remote)
+        project_path:  Local path to the project
+        remote_url:    GitHub repo URL (https)
+        branch:        Branch name to push to
+        force:         Pass --force to git push (overwrites remote — for history rewrites)
+        force_secrets: Ignore secret-scanner findings and push anyway.
+                       Default is to ABORT on any credential-pattern match.
+                       Only use for known false positives.
 
     Returns:
-        True if successful
+        True if successful.
     """
     project = Path(project_path)
     logger.info(f"git_init_and_push: path='{project_path}', remote='{remote_url}', branch='{branch}'")
@@ -304,26 +313,48 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main", 
         + "\n"
     )
 
-    # Create .gitignore if missing, or ensure reserved names are present
+    # Create .gitignore if missing, or ensure reserved names + secret-file
+    # patterns are present. Expanded 2026-04-18 after repeated secret leaks:
+    # scratch/ (session-scoped scripts), VOXCLAW.md (local cred reference),
+    # .secrets, *.local, SECRETS.md etc. — files that carry live creds and
+    # have no business in a public repo.
     gitignore = project / ".gitignore"
+    DEFAULT_GITIGNORE = (
+        "# Dependencies\nnode_modules/\n.venv/\nvenv/\nenv/\n\n"
+        "# Build\ndist/\nbuild/\n*.egg-info/\n__pycache__/\ntarget/\n\n"
+        "# IDE\n.idea/\n.vscode/\n*.swp\n*.swo\n\n"
+        "# OS\n.DS_Store\nThumbs.db\n\n"
+        "# Environment + credentials — never commit\n"
+        ".env\n.env.*\n!.env.example\n"
+        "*.key\n*.pem\n*.p12\n*.pfx\n"
+        ".secrets\n*.secret*\ncredentials*\nsecrets/\n"
+        "*.local\n\n"
+        "# Documents that commonly contain live credentials\n"
+        "VOXCLAW.md\nSECRETS.md\nCREDENTIALS.md\nPRIVATE.md\nCREDS.md\n\n"
+        "# Session scratch — never commit\n"
+        "scratch/\n"
+        + RESERVED_GITIGNORE_BLOCK
+    )
+    # Minimum lines we always want to see in an existing .gitignore
+    _REQUIRED_ENTRIES = [
+        ".env", ".secrets", "VOXCLAW.md", "scratch/", "*.local", "nul",
+    ]
     if not gitignore.exists():
         logger.info("Creating default .gitignore")
-        gitignore.write_text(
-            "# Dependencies\nnode_modules/\n.venv/\nvenv/\nenv/\n\n"
-            "# Build\ndist/\nbuild/\n*.egg-info/\n__pycache__/\n\n"
-            "# IDE\n.idea/\n.vscode/\n*.swp\n*.swo\n\n"
-            "# OS\n.DS_Store\nThumbs.db\n\n"
-            "# Environment\n.env\n.env.local\n*.key\n*.pem\n"
-            + RESERVED_GITIGNORE_BLOCK,
-            encoding="utf-8",
-        )
+        gitignore.write_text(DEFAULT_GITIGNORE, encoding="utf-8")
     else:
-        # Ensure existing .gitignore has reserved names
         existing = gitignore.read_text(encoding="utf-8", errors="replace")
-        if "nul" not in existing.split("\n"):
-            logger.info("Appending Windows reserved names to existing .gitignore")
+        existing_lines = set(existing.splitlines())
+        missing = [e for e in _REQUIRED_ENTRIES if e not in existing_lines]
+        if missing:
+            logger.info(f"Appending missing gitignore entries: {missing}")
             with open(gitignore, "a", encoding="utf-8") as f:
-                f.write(RESERVED_GITIGNORE_BLOCK)
+                f.write("\n# Added by uploader (secret-leak hardening, 2026-04-18)\n")
+                for entry in missing:
+                    f.write(entry + "\n")
+                # Also append the reserved-names block if the `nul` sentinel was missing
+                if "nul" in missing:
+                    f.write(RESERVED_GITIGNORE_BLOCK)
 
     # Add all files (with recovery for problematic files)
     add_result = run_git("add", "-A")
@@ -341,6 +372,29 @@ def git_init_and_push(project_path: str, remote_url: str, branch: str = "main", 
                 fname = line[3:].strip().strip('"')
                 if fname and fname.lower() not in WINDOWS_RESERVED:
                     run_git("add", "--", fname)
+
+    # --- SECRET SCAN GATE ---
+    # Scan every staged file for high-confidence credential patterns (Stripe
+    # sk_live_*, Telegram bot tokens, RunPod rpa_*, GitHub ghp_*, etc). Abort
+    # the entire push on any hit so nobody leaks another live key through
+    # this tool. The scanner runs on the INDEX, so .gitignore already filtered
+    # the obvious cases — this catches the non-obvious ones (hardcoded tokens
+    # in .js/.py/.md source files).
+    try:
+        from secret_scanner import scan_staged, format_report
+        clean, findings = scan_staged(project)
+        if not clean:
+            print(format_report(findings), file=sys.stderr)
+            logger.error(f"Secret scan blocked push for {project}: "
+                         f"{len(findings)} findings")
+            # Optional escape hatch for false positives
+            if not force_secrets:
+                return False
+            logger.warning("--force-secrets set; pushing despite secret scan hits")
+    except ImportError:
+        logger.warning("secret_scanner module missing — skipping scan (NOT SAFE)")
+    except Exception as e:
+        logger.warning(f"secret scan errored, continuing anyway: {e}")
 
     # Check if there's anything to commit
     status = run_git("status", "--porcelain")

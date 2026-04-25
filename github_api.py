@@ -71,9 +71,11 @@ class GitHubAPI:
         if body:
             logger.debug(f">>> Body: {body.decode('utf-8')}")
 
+        if not url.startswith("https://api.github.com/"):
+            raise ValueError(f"refusing to open non-GitHub URL: {url}")
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosemgrep — scheme guarded above
                 resp_body = resp.read().decode("utf-8")
                 logger.debug(f"<<< {resp.status} {resp.reason}")
                 logger.debug(f"<<< Response headers: {dict(resp.headers)}")
@@ -141,9 +143,11 @@ class GitHubAPI:
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "github-uploader-buildout",
         }
+        if not url.startswith("https://api.github.com/"):
+            raise ValueError(f"refusing to open non-GitHub URL: {url}")
         req = urllib.request.Request(url, headers=headers, method="HEAD")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosemgrep — scheme guarded above
                 scopes = resp.headers.get("X-OAuth-Scopes", "")
                 logger.info(f"Token scopes: '{scopes}'")
 
@@ -329,6 +333,16 @@ def git_init_and_push(
         "*.key\n*.pem\n*.p12\n*.pfx\n"
         ".secrets\n*.secret*\ncredentials*\nsecrets/\n"
         "*.local\n\n"
+        # Hardened 2026-04-25 after `satibook-key` (RSA private), Discord bot
+        # token, and Windows-pathed local files were found in distcc history.
+        "# SSH private keys (no-extension forms — won't be caught by *.key)\n"
+        "id_rsa\nid_ed25519\nid_ecdsa\nid_dsa\n*-key\n!*-key.pub\n\n"
+        "# Claude Code session credentials\n"
+        ".claude/.credentials.json\n.credentials.json\n\n"
+        "# Bulk-upload-of-home-dir leakage. The Windows uploader sometimes\n"
+        "# absorbs files from C:\\Users\\... or C:\\Windows\\... into the repo,\n"
+        "# encoding the colon as a Unicode private-use char. Block both forms.\n"
+        "C:Users*\nC:Windows*\n\n"
         "# Documents that commonly contain live credentials\n"
         "VOXCLAW.md\nSECRETS.md\nCREDENTIALS.md\nPRIVATE.md\nCREDS.md\n\n"
         "# Session scratch — never commit\n"
@@ -338,6 +352,9 @@ def git_init_and_push(
     # Minimum lines we always want to see in an existing .gitignore
     _REQUIRED_ENTRIES = [
         ".env", ".secrets", "VOXCLAW.md", "scratch/", "*.local", "nul",
+        "id_rsa", "id_ed25519", "*-key",
+        ".claude/.credentials.json",
+        "C:Users*", "C:Windows*",
     ]
     if not gitignore.exists():
         logger.info("Creating default .gitignore")

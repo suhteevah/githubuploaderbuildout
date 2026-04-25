@@ -78,6 +78,14 @@ _PATTERNS = [
     # Mailgun
     ("Mailgun key",
      re.compile(r"\bkey-[a-f0-9]{32}\b")),
+    # Tailscale auth keys (pre-auth keys for joining the tailnet)
+    # Added 2026-04-25 after kVHj9zhN... leaked through clawhub bulk upload.
+    ("Tailscale auth key",
+     re.compile(r"\btskey-(?:auth|api|client)-[A-Za-z0-9_-]{20,}\b")),
+    # Anthropic OAuth tokens (Claude Max sessions). Different scope than
+    # API keys — these grant Claude.ai/Code access bound to the user's plan.
+    ("Anthropic OAuth token",
+     re.compile(r"\bsk-ant-oat0[0-9]-[A-Za-z0-9_-]{40,}\b")),
 ]
 
 
@@ -92,7 +100,34 @@ _SUSPICIOUS_FILENAMES = {
     ".secrets",
     "creds.txt",
     "passwords.txt",
+    # Common SSH private-key filenames (no extension — would not match *.key/*.pem).
+    # Added 2026-04-25 after `satibook-key` (RSA private) leaked through bulk upload.
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+    # Anthropic / Claude Code session credentials.
+    ".credentials.json",
+    "credentials.json",
+    # Discord bot token holders.
+    "discord-bot-token.secret",
+    "discord_bot_token.secret",
 }
+
+# Filename patterns (regex) that block the push regardless of content.
+# These catch the bulk-upload-of-home-dir bug where Windows absolute paths
+# end up as repo files (the `:` gets Unicode-escaped to U+F03A).
+_BLOCKED_PATH_PATTERNS = [
+    # Windows absolute paths leaked into the repo as filenames.
+    # The Unicode private-use char U+F03A (\xef\x80\xba in UTF-8) replaces `:`.
+    ("Windows absolute path leaked as filename",
+     re.compile(r"^C[\xef\x80\xba:]Users", re.IGNORECASE)),
+    ("Windows system path leaked as filename",
+     re.compile(r"^C[\xef\x80\xba:]Windows", re.IGNORECASE)),
+    # No-extension key files at repo root (e.g. satibook-key, prod-key).
+    ("Bare SSH key filename at repo root",
+     re.compile(r"^[a-zA-Z0-9_-]+-key$")),
+]
 
 
 def _list_staged_files(project: Path) -> list[Path]:
@@ -129,6 +164,15 @@ def _scan_file(path: Path, repo_root: Path) -> list[tuple[str, int, str]]:
     if path.name.lower() in _SUSPICIOUS_FILENAMES:
         hits.append((f"suspicious filename: {path.name}", 0,
                      f"{rel} — file name commonly contains credentials"))
+
+    # Hard-block path patterns: bulk-upload-of-home-dir bug, bare SSH keys.
+    rel_str = str(rel).replace("\\", "/")
+    for blocked_name, blocked_pat in _BLOCKED_PATH_PATTERNS:
+        # Check both the repo-relative path and just the filename.
+        if blocked_pat.search(rel_str) or blocked_pat.search(path.name):
+            hits.append((blocked_name, 0,
+                         f"{rel} — path matches a known leak pattern"))
+            break
 
     # Content scan
     try:
